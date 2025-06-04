@@ -1,4 +1,5 @@
 from requests.structures import CaseInsensitiveDict
+from adexpsnapshot.parser.classes import CaseInsensitiveDefaultDict
 
 import pwnlib.log, pwnlib.term, logging
 
@@ -60,6 +61,7 @@ class ADExplorerSnapshot(object):
         self.domaincontrollers = []
         self.rootdomain = None
         self.certtemplates = defaultdict(set)
+        self.child_object_tree = CaseInsensitiveDefaultDict(set)
 
     def outputObjects(self):
         import codecs, json, base64
@@ -165,6 +167,7 @@ class ADExplorerSnapshot(object):
             self.domaincontrollers = dico['domaincontrollers']
             self.rootdomain = dico['rootdomain']
             self.certtemplates = dico['certtemplates']
+            self.child_object_tree = dico['child_objects']
         else:
             self.preprocess()
 
@@ -177,6 +180,7 @@ class ADExplorerSnapshot(object):
             dico['domaincontrollers'] = self.domaincontrollers
             dico['rootdomain'] = self.rootdomain
             dico['certtemplates'] = self.certtemplates
+            dico['child_objects'] = self.child_object_tree
             dico['shelved'] = True
             Pickler(open(cachePath, "wb")).dump(dico)
 
@@ -236,6 +240,13 @@ class ADExplorerSnapshot(object):
             # get dcs
             if ADUtils.get_entry_property(obj, 'userAccountControl', 0) & 0x2000 == 0x2000:
                 self.domaincontrollers.append(idx)
+
+            # create child object tree
+            from adexpsnapshot.parser.classes import DN
+            #distinguishedName = ADUtils.get_entry_property(obj, 'distinguishedName') # can be left out, variable is populated above
+            distinguishedNameComponents = DN.parse_dn(str(distinguishedName))
+            parentDistinguishedName = DN.dn_to_string(distinguishedNameComponents[1:])
+            self.child_object_tree[parentDistinguishedName].add(str(distinguishedName).upper())
 
             if self.log and self.log.term_mode:
                 prog.status(f"{idx+1}/{self.snap.header.numObjects} ({len(self.sidcache)} sids, {len(self.computersidcache)} computers, {len(self.domains)} domains with {len(self.domaincontrollers)} DCs)")

@@ -11,6 +11,9 @@ import uuid
 from io import BytesIO
 import datetime, calendar
 
+import string
+from io import StringIO
+
 ADSTYPE_INVALID = 0
 ADSTYPE_DN_STRING = 1
 ADSTYPE_CASE_EXACT_STRING = 2
@@ -356,3 +359,149 @@ class Snapshot(object):
 
         if self.log:
             prog.success(str(rights_with_header.numRights))
+
+class CaseInsensitiveDefaultDict(CaseInsensitiveDict):
+    def __init__(self, *args, **kwargs):
+        if 'default_factory' in kwargs:
+            self.default = kwargs['default_factory']
+            del kwargs['default_factory']
+        elif len(args) > 0:
+            self.default = args[0]
+            args = args[1:]
+        else:
+            self.default = None
+        CaseInsensitiveDict.__init__(self, *args, **kwargs)
+
+    def __repr__(self):
+        return 'CaseInsensitiveDefaultDict(%s, %s)' % (self.default, CaseInsensitiveDict.__repr__(self))
+
+    def __missing__(self, key):
+        if self.default:
+            value = self.default()
+            CaseInsensitiveDict.__setitem__(self, key, value)
+            return value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        try:
+            return CaseInsensitiveDict.__getitem__(self, key)
+        except KeyError:
+            return self.__missing__(key)
+
+# modified version of https://gist.github.com/markscottwright/329d1638b1c3b10a54ffd413f6a89b93
+# used for parsing distinguished names into its components
+class DN:
+    class _Peekable:
+        def __init__(self, wrapped):
+            self.wrapped = wrapped
+            self.last_char = None
+
+        def next_char(self):
+            if self.last_char is not None:
+                t = self.last_char
+                self.last_char = None
+                return t
+            else:
+                return self.wrapped.read(1)
+
+        def push(self, c):
+            self.last_char = c
+
+    def _read_attribute(dn_reader):
+        """read up to and consume ="""
+        attribute = ''
+        while (c := dn_reader.next_char()) != '=':
+            if c == '':
+                raise Exception("DN parsing error")
+            attribute += c
+        return attribute
+
+    def _read_string(dn_reader):
+        s = ""
+        spaces = ''
+        # skip leading whitespace
+        while (c := dn_reader.next_char()) != '':
+            if c == ',' or c == '+':
+                dn_reader.push(c)
+                break
+            elif c == ' ':
+                spaces += c
+            else:
+                # only add spaces we've seen if we're in the middle of a string
+                if s != '':
+                    s += spaces
+
+                spaces = ''
+                if c == '\\':
+                    next_c = dn_reader.next_char()
+                    if next_c in r'"+,;\<>=':
+                        s += next_c
+                    elif next_c in "0123456789abcdefABCDEF":
+                        hexchar2 = dn_reader.next_char()
+                        s += chr(int(next_c + hexchar2, 16))
+                else:
+                    s += c
+
+        return s
+
+    def _read_rdn(dn_reader, normalize_attributes):
+        out = [DN._read_name_and_attribute(dn_reader, normalize_attributes)]
+        while (c := dn_reader.next_char()) == '+':
+            out.append(DN._read_name_and_attribute(dn_reader, normalize_attributes))
+        dn_reader.push(c)
+        return out
+
+    def _read_name_and_attribute(dn_reader, normalize_attributes):
+        if normalize_attributes:
+            return DN._read_attribute(dn_reader).upper() + "=" + DN._read_string(dn_reader)
+        else:
+            return DN._read_attribute(dn_reader) + "=" + DN._read_string(dn_reader)
+
+    def _read_dn(dn_reader, normalize_attributes):
+        out = [DN._read_rdn(dn_reader, normalize_attributes)]
+        while (c := dn_reader.next_char()) == ',':
+            out.append(DN._read_rdn(dn_reader, normalize_attributes))
+        dn_reader.push(c)
+        return out
+
+    def parse_dn(s: str, normalize_attributes=True) -> list[list[str]]:
+        r"""
+        Given a DN string, return a list of rdns, where an rdn is a list of "attribute=value"
+        >>> parse_dn(r'CN=Mark Wright,OU=Spectre+UID=1234,C=US')
+        [['CN=Mark Wright'], ['OU=Spectre', 'UID=1234'], ['C=US']]
+        >>> parse_dn(r'CN=    Mark Wright\20   ')
+        [['CN=Mark Wright ']]
+        """
+        return DN._read_dn(DN._Peekable(StringIO(s)), normalize_attributes)
+
+    def _name_and_attribute_to_string(n):
+        value_position = n.index('=') + 1
+
+        last_non_space_position = len(n)-1
+        while n[last_non_space_position] == ' ':
+            last_non_space_position -= 1
+
+        out = n[0:value_position]
+        char_seen = False
+        for p in range(value_position, last_non_space_position+1):
+            if n[p] == ' ' and not char_seen:
+                out += r"\20";
+            else:
+                char_seen = True
+                if n[p] in r'"+,;\<>=':
+                    out += "\\" + n[p]
+                elif n[p] in string.printable:
+                    out += n[p]
+                else:
+                    out += "\\02x" % ord(n[p])
+
+        out += "\\20" * (len(n) - last_non_space_position - 1)
+        return out
+
+    def _rdn_to_string(rdn):
+        return "+".join(DN._name_and_attribute_to_string(n) for n in rdn)
+
+    def dn_to_string(dn: list[list[str]]) -> str:
+        out = ''
+        return ",".join(DN._rdn_to_string(rdn) for rdn in dn)
