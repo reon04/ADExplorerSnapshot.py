@@ -1,4 +1,5 @@
 from requests.structures import CaseInsensitiveDict
+from adexpsnapshot.parser.classes import CaseInsensitiveDefaultDict
 
 import pwnlib.log, pwnlib.term, logging
 
@@ -60,6 +61,7 @@ class ADExplorerSnapshot(object):
         self.domaincontrollers = []
         self.rootdomain = None
         self.certtemplates = defaultdict(set)
+        self.child_object_tree = CaseInsensitiveDefaultDict(set)
 
     def outputObjects(self):
         import codecs, json, base64
@@ -132,6 +134,9 @@ class ADExplorerSnapshot(object):
         self.numGroups = 0
         self.numComputers = 0
         self.numTrusts = 0
+        self.numGPOs = 0
+        self.numOUs = 0
+        self.numContainers = 0
         self.numCertTemplates = 0
         self.numCAs = 0
 
@@ -162,6 +167,7 @@ class ADExplorerSnapshot(object):
             self.domaincontrollers = dico['domaincontrollers']
             self.rootdomain = dico['rootdomain']
             self.certtemplates = dico['certtemplates']
+            self.child_object_tree = dico['child_objects']
         else:
             self.preprocess()
 
@@ -174,6 +180,7 @@ class ADExplorerSnapshot(object):
             dico['domaincontrollers'] = self.domaincontrollers
             dico['rootdomain'] = self.rootdomain
             dico['certtemplates'] = self.certtemplates
+            dico['child_objects'] = self.child_object_tree
             dico['shelved'] = True
             Pickler(open(cachePath, "wb")).dump(dico)
 
@@ -234,6 +241,13 @@ class ADExplorerSnapshot(object):
             if ADUtils.get_entry_property(obj, 'userAccountControl', 0) & 0x2000 == 0x2000:
                 self.domaincontrollers.append(idx)
 
+            # create child object tree
+            from adexpsnapshot.parser.classes import DN
+            #distinguishedName = ADUtils.get_entry_property(obj, 'distinguishedName') # can be left out, variable is populated above
+            distinguishedNameComponents = DN.parse_dn(str(distinguishedName))
+            parentDistinguishedName = DN.dn_to_string(distinguishedNameComponents[1:])
+            self.child_object_tree[parentDistinguishedName].add(str(distinguishedName).upper())
+
             if self.log and self.log.term_mode:
                 prog.status(f"{idx+1}/{self.snap.header.numObjects} ({len(self.sidcache)} sids, {len(self.computersidcache)} computers, {len(self.domains)} domains with {len(self.domaincontrollers)} DCs)")
 
@@ -248,7 +262,7 @@ class ADExplorerSnapshot(object):
         if self.log:
             prog = self.log.progress("Collecting data", rate=0.1)
 
-        for ptype in ['users', 'computers', 'groups', 'domains', 'cert_bh', 'cert_ly4k_tpls', 'cert_ly4k_cas']:
+        for ptype in ['users', 'computers', 'groups', 'domains', 'gpos', 'ous', 'containers', 'cert_bh', 'cert_ly4k_tpls', 'cert_ly4k_cas']:
             self.writeQueues[ptype] = queue.Queue()
             btype = ptype
 
@@ -265,22 +279,22 @@ class ADExplorerSnapshot(object):
             results_worker.start()
 
         for idx,obj in enumerate(self.snap.objects):
-            for fun in [self.processUsers, self.processComputers, self.processGroups, self.processTrusts, self.processCertTemplates, self.processCAs]:
+            for fun in [self.processUsers, self.processComputers, self.processGroups, self.processTrusts, self.processGPOs, self.processOUs, self.processContainers, self.processCertTemplates, self.processCAs]:
                 ret = fun(obj)
                 if ret:
                     break
 
             if self.log and self.log.term_mode:
-                prog.status(f"{idx+1}/{self.snap.header.numObjects} ({self.numUsers} users, {self.numGroups} groups, {self.numComputers} computers, {self.numCertTemplates} certtemplates, {self.numCAs} CAs, {self.numTrusts} trusts)")
+                prog.status(f"{idx+1}/{self.snap.header.numObjects} ({self.numUsers} users, {self.numGroups} groups, {self.numComputers} computers, {self.numGPOs} GPOs, {self.numOUs} OUs, {self.numContainers} containers, {self.numCertTemplates} certtemplates, {self.numCAs} CAs, {self.numTrusts} trusts)")
 
         if self.log:
-            prog.success(f"{self.numUsers} users, {self.numGroups} groups, {self.numComputers} computers, {self.numCertTemplates} certtemplates, {self.numCAs} CAs, {self.numTrusts} trusts")
+            prog.success(f"{self.numUsers} users, {self.numGroups} groups, {self.numComputers} computers, {self.numGPOs} GPOs, {self.numOUs} OUs, {self.numContainers} containers, {self.numCertTemplates} certtemplates, {self.numCAs} CAs, {self.numTrusts} trusts")
 
         self.write_default_users()
         self.write_default_groups()
         self.processDomains()
 
-        for ptype in ['users', 'computers', 'groups', 'domains', 'cert_bh', 'cert_ly4k_tpls', 'cert_ly4k_cas']:
+        for ptype in ['users', 'computers', 'groups', 'domains', 'gpos', 'ous', 'containers', 'cert_bh', 'cert_ly4k_tpls', 'cert_ly4k_cas']:
             self.writeQueues[ptype].put(None)
             self.writeQueues[ptype].join()
 
@@ -799,6 +813,159 @@ class ADExplorerSnapshot(object):
 
         self.numUsers += 1
         self.writeQueues["users"].put(user)
+        return True
+
+    def processGPOs(self, entry):
+        if 'grouppolicycontainer' != entry.category:
+            return  
+
+        # https://github.com/fox-it/BloodHound.py/compare/4e61b27..master#diff-e648a2af9ee22729b0e7e215d07cd8e7c30a940e4de538a05a2c110ba5c03f5eR392-R671
+
+        resolved_entry = ADUtils.resolve_ad_entry(entry)
+        guid = resolved_entry['objectid']
+
+        if not guid:
+            return
+
+        gpo = {
+            "ObjectIdentifier": guid,
+            "Properties": {
+                "domain": self.domainname.upper(),
+                "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'displayName').upper(), self.domainname.upper()),
+                "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                "domainsid": self.domainsid,
+                "highvalue": False,
+                "gpcpath": ADUtils.get_entry_property(entry, 'gPCFileSysPath').upper(),
+            },
+            "IsDeleted": False,
+            "IsACLProtected": False,
+            "Aces": [],
+        }
+
+        gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
+        gpo["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', 0)
+
+        aces = self.parse_acl(gpo, 'gpo', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True))
+        gpo['Aces'] += self.resolve_aces(aces)
+
+        self.numGPOs += 1
+        self.writeQueues["gpos"].put(gpo)
+        return True
+
+    def processOUs(self, entry):
+        if 'organizationalunit' != entry.category:
+            return  
+
+        resolved_entry = ADUtils.resolve_ad_entry(entry)
+        guid = resolved_entry['objectid']
+
+        if not guid:
+            return
+
+        ou = {
+            "ObjectIdentifier": guid,
+            "Properties": {
+                "domain": self.domainname.upper(),
+                "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'name').upper(), self.domainname.upper()),
+                "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                "domainsid": self.domainsid,
+                "highvalue": False,
+                "blocksinheritance": False,
+            },
+            "IsDeleted": False,
+            "IsACLProtected": False,
+            "Aces": [],
+            "Links": [],
+            "ChildObjects": [],
+            "GPOChanges": {
+                "AffectedComputers": [],
+                "DcomUsers": [],
+                "LocalAdmins": [],
+                "PSRemoteUsers": [],
+                "RemoteDesktopUsers": []
+            },
+        }
+
+        ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
+        ou["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', default=0)
+
+        for childentry in self.child_object_tree[ou["Properties"]["distinguishedname"]]:
+            childentry = self.snap.getObject(self.dncache[childentry])
+            resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+            out_object = {
+                "ObjectIdentifier":resolved_childentry['objectid'],
+                "ObjectType":resolved_childentry['type']
+            }
+            ou["ChildObjects"].append(out_object)
+
+        for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
+            link = dict()
+            link['IsEnforced'] = options == 2
+            try:
+                link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
+                ou['Links'].append(link)
+            except TypeError:
+                logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
+
+        aces = self.parse_acl(ou, 'ou', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True))
+        ou['Aces'] += self.resolve_aces(aces)
+
+        self.numOUs += 1
+        self.writeQueues["ous"].put(ou)
+        return True
+
+    def processContainers(self, entry):
+        if not ('container' == entry.category and 'container' in entry.classes):
+            return
+
+        # needs some testing, currently don't have an ad with containers...
+        # should take into account child objects
+        # https://github.com/fox-it/BloodHound.py/compare/4e61b27..master#diff-44bae03ab28369b028c112f29807ae2518b5a2eab0fcc7840837faf3bb5d718fR129-R138
+        # https://github.com/fox-it/BloodHound.py/compare/4e61b27..master#diff-44bae03ab28369b028c112f29807ae2518b5a2eab0fcc7840837faf3bb5d718fR155-R164
+
+        if ADUtils.is_filtered_container(ADUtils.get_entry_property(entry, 'distinguishedName')):
+            return
+
+        resolved_entry = ADUtils.resolve_ad_entry(entry)
+        guid = resolved_entry['objectid']
+
+        if not guid:
+            return
+
+        container = {
+            "ObjectIdentifier": guid,
+            "Properties": {
+                "domain": self.domainname.upper(),
+                "name": '%s@%s' % (ADUtils.get_entry_property(entry, 'name').upper(), self.domainname.upper()),
+                "distinguishedname": ADUtils.get_entry_property(entry, 'distinguishedName').upper(),
+                "domainsid": self.domainsid,
+                "highvalue": False,
+            },
+            "IsDeleted": False,
+            "IsACLProtected": False,
+            "Aces": [],
+            "ChildObjects": [],
+        }
+
+        container["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
+        container["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', default=0)
+
+        for childentry in self.child_object_tree[container["Properties"]["distinguishedname"]]:
+            childentry = self.snap.getObject(self.dncache[childentry])
+            if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
+                continue
+            resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+            object = {
+                "ObjectIdentifier":resolved_childentry['objectid'],
+                "ObjectType":resolved_childentry['type']
+            }
+            container["ChildObjects"].append(object)
+
+        aces = self.parse_acl(container, 'container', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True))
+        container['Aces'] += self.resolve_aces(aces)
+
+        self.numContainers += 1
+        self.writeQueues["containers"].put(container)
         return True
 
     @functools.lru_cache(maxsize=4096)
