@@ -845,16 +845,6 @@ class ADExplorerSnapshot(object):
         gpo["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
         gpo["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', 0)
 
-        """
-                    # Create cache entry for links
-            link_output = {
-                "ObjectIdentifier": gpo['ObjectIdentifier'],
-                "ObjectType": "GPO",
-            }
-            self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
-        
-        """
-
         aces = self.parse_acl(gpo, 'gpo', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True))
         gpo['Aces'] += self.resolve_aces(aces)
 
@@ -899,31 +889,23 @@ class ADExplorerSnapshot(object):
         ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
         ou["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', default=0)
 
-        """
-            for childentry in self.addc.get_childobjects(ou["Properties"]["distinguishedname"]):
-                resolved_childentry = ADUtils.resolve_ad_entry(childentry)
-                out_object = {
-                    "ObjectIdentifier":resolved_childentry['objectid'],
-                    "ObjectType":resolved_childentry['type']
-                }
-                ou["ChildObjects"].append(out_object)
-
-            for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
-                link = dict()
-                link['IsEnforced'] = options == 2
-                try:
-                    link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
-                    ou['Links'].append(link)
-                except TypeError:
-                    logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
-
-            # Create cache entry for links
-            link_output = {
-                "ObjectIdentifier": ou['ObjectIdentifier'],
-                "ObjectType": 'OU'
+        for childentry in self.child_object_tree[ou["Properties"]["distinguishedname"]]:
+            childentry = self.snap.getObject(self.dncache[childentry])
+            resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+            out_object = {
+                "ObjectIdentifier":resolved_childentry['objectid'],
+                "ObjectType":resolved_childentry['type']
             }
-            self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
-        """
+            ou["ChildObjects"].append(out_object)
+
+        for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(entry, 'gPLink', '')):
+            link = dict()
+            link['IsEnforced'] = options == 2
+            try:
+                link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
+                ou['Links'].append(link)
+            except TypeError:
+                logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
 
         aces = self.parse_acl(ou, 'ou', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True))
         ou['Aces'] += self.resolve_aces(aces)
@@ -968,24 +950,16 @@ class ADExplorerSnapshot(object):
         container["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
         container["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', default=0)
 
-        """
-            for childentry in self.addc.get_childobjects(container["Properties"]["distinguishedname"]):
-                if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
-                    continue
-                resolved_childentry = ADUtils.resolve_ad_entry(childentry)
-                object = {
-                    "ObjectIdentifier":resolved_childentry['objectid'],
-                    "ObjectType":resolved_childentry['type']
-                }
-                container["ChildObjects"].append(object)
-
-            # Create cache entry for links
-            link_output = {
-                "ObjectIdentifier": container['ObjectIdentifier'],
-                "ObjectType": 'container'
+        for childentry in self.child_object_tree[container["Properties"]["distinguishedname"]]:
+            childentry = self.snap.getObject(self.dncache[childentry])
+            if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
+                continue
+            resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+            object = {
+                "ObjectIdentifier":resolved_childentry['objectid'],
+                "ObjectType":resolved_childentry['type']
             }
-            self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
-        """
+            container["ChildObjects"].append(object)
 
         aces = self.parse_acl(container, 'container', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True))
         container['Aces'] += self.resolve_aces(aces)
