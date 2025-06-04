@@ -809,7 +809,7 @@ class ADExplorerSnapshot(object):
             return  
 
         # https://github.com/fox-it/BloodHound.py/compare/4e61b27..master#diff-e648a2af9ee22729b0e7e215d07cd8e7c30a940e4de538a05a2c110ba5c03f5eR392-R671
-        
+
         resolved_entry = ADUtils.resolve_ad_entry(entry)
         guid = resolved_entry['objectid']
 
@@ -843,7 +843,7 @@ class ADExplorerSnapshot(object):
             self.addomain.dncache[ADUtils.get_entry_property(entry, 'distinguishedName').upper()] = link_output
         
         """
-        
+
         aces = self.parse_acl(gpo, 'gpo', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True))
         gpo['Aces'] += self.resolve_aces(aces)
 
@@ -854,14 +854,12 @@ class ADExplorerSnapshot(object):
     def processOUs(self, entry):
         if 'organizationalunit' != entry.category:
             return  
-        
+
         resolved_entry = ADUtils.resolve_ad_entry(entry)
         guid = resolved_entry['objectid']
 
         if not guid:
             return
-        
-        print(guid)
 
         ou = {
             "ObjectIdentifier": guid,
@@ -931,10 +929,10 @@ class ADExplorerSnapshot(object):
         # should take into account child objects
         # https://github.com/fox-it/BloodHound.py/compare/4e61b27..master#diff-44bae03ab28369b028c112f29807ae2518b5a2eab0fcc7840837faf3bb5d718fR129-R138
         # https://github.com/fox-it/BloodHound.py/compare/4e61b27..master#diff-44bae03ab28369b028c112f29807ae2518b5a2eab0fcc7840837faf3bb5d718fR155-R164
-        
+
         if ADUtils.is_filtered_container(ADUtils.get_entry_property(entry, 'distinguishedName')):
             return
-        
+
         resolved_entry = ADUtils.resolve_ad_entry(entry)
         guid = resolved_entry['objectid']
 
@@ -955,7 +953,7 @@ class ADExplorerSnapshot(object):
             "Aces": [],
             "ChildObjects": [],
         }
-        
+
         container["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
         container["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', default=0)
 
