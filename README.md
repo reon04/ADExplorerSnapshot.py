@@ -3,7 +3,7 @@
 ![Python 3.8+ compatible](https://img.shields.io/badge/python-%5E3.8-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-ADExplorerSnapshot.py is an AD Explorer snapshot parser. It is made as an ingestor for [BloodHound](https://bloodhound.readthedocs.io/), and also supports full-object dumping to NDJSON.
+ADExplorerSnapshot.py is an AD Explorer snapshot parser. It is made as an ingestor for [BloodHound](https://bloodhound.readthedocs.io/), and also supports full-object dumping to NDJSON. This is a forked version of the [original](https://github.com/c3c/ADExplorerSnapshot.py) by [Cedric Van Bockhaven](https://github.com/c3c) that implements GPO, OU and container support.
 
 AD Explorer allows you to connect to a DC and browse LDAP data. It can also create snapshots of the server you are currently attached to. This tool allows you to convert those snapshots to BloodHound-compatible JSON files, or dump all available objects in the snapshot to NDJSON for easier processing.
 
@@ -15,6 +15,9 @@ In `BloodHound` output mode:
  * Users collection
  * Groups collection
  * Computers collection
+ * GPOs collection
+ * OUs collection
+ * Containers collection
  * Trusts collection (as visible from the LDAP DC you are connected to)
  * Certificate template collection
 
@@ -22,14 +25,14 @@ In `Objects` output mode, all attributes for every object are parsed and outputt
 
 ## Limitations
 
-The ingestor for BloodHound only supports offline information collection from the snapshot file and won't interact with systems on the network. That means features like session and localadmin collection are not available. GPO/OU collection is missing. The ingestor processes all data it possibly can from the snapshot (including ACLs), but will only output the JSON data that can be interpreted by BloodHound. You will only have the data available of the LDAP/DC that you ran the snapshot against.
+The ingestor for BloodHound only supports offline information collection from the snapshot file and won't interact with systems on the network. That means features like session and localadmin collection are not available. The ingestor processes all data it possibly can from the snapshot (including ACLs), but will only output the JSON data that can be interpreted by BloodHound. You will only have the data available of the LDAP/DC that you ran the snapshot against.
 
 ## Installation
 
 ADExplorerSnapshot.py supports Python 3.8+. Dependencies are managed via pip.
 
 ```
-git clone https://github.com/c3c/ADExplorerSnapshot.py.git
+git clone https://github.com/reon04/ADExplorerSnapshot.py.git
 cd ADExplorerSnapshot.py
 pip3 install --user .
 ```
@@ -64,7 +67,7 @@ If you use ly4k's fork, you should import the `cert_ly4k` files instead. Some in
 ## Notes
 
 This library is now supporting the BloodHound v6 output format. Older versions were supported in earlier commmits if you still need them.
-For the old v3 output format, you can use the code in the [v3-format branch](https://github.com/c3c/ADExplorerSnapshot.py/tree/v3-format).
+For the old v3 output format, you can use the code in the [v3-format branch](https://github.com/reon04/ADExplorerSnapshot.py/tree/v3-format).
 
 Making snapshots in AD Explorer is more network-intensive than the traditional BloodHound ingestors as it attempts to retrieve all objects it can from the LDAP.
 
@@ -86,15 +89,14 @@ Detection of this tool is possible in multiple ways, for which I refer to the ex
 
 This code is licensed under the [MIT license](https://opensource.org/licenses/MIT) and makes use of code that is also licensed under the MIT license.
 
-ADExplorerSnapshot.py relies on the following projects:
+The forked ADExplorerSnapshot.py version relies on the following projects:
+ - [ADExplorerSnapshot.py](https://github.com/c3c/ADExplorerSnapshot.py) (the original upstream project)
  - [BloodHound.py](https://github.com/fox-it/BloodHound.py) (the Python BloodHound ingestor): for processing LDAP data.
  - [dissect.cstruct](https://github.com/fox-it/dissect.cstruct) (C-style binary struct parser): for parsing the binary snapshot data.
  - [certipy](https://github.com/ly4k/Certipy) (ADCS enumeration tool): for processing certificate template information.
 
-Credits:
+Credits in the original upstream project:
  - Cedric Van Bockhaven for implementation
  - Marat Nigmatullin for the idea
  - The FalconForce team for adding certificate template support
  - Oddvar Moe (@api0cradle) for contributing various scripts
-
-Thanks to Deloitte for providing the environment in which this tool was developed.
