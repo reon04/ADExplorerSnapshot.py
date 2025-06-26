@@ -37,6 +37,10 @@ cd ADExplorerSnapshot.py
 pip3 install --user .
 ```
 
+Notes:
+- choose pip or pip3 accordingly
+- when using a venv the option `--user` is not needed
+
 ## Usage
 
 ```
