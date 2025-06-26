@@ -325,7 +325,6 @@ class ADExplorerSnapshot(object):
             },
             "Trusts": [],
             "Aces": [],
-            # The below is all for GPO collection, unsupported as of now.
             "Links": [],
             "ChildObjects": [],
             "GPOChanges": {
@@ -338,6 +337,24 @@ class ADExplorerSnapshot(object):
             "IsDeleted": False,
             "IsACLProtected": False
         }
+
+        for childentry in self.child_object_tree[domain["Properties"]["distinguishedname"]]:
+            childentry = self.snap.getObject(self.dncache[childentry])
+            resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+            out_object = {
+                "ObjectIdentifier":resolved_childentry['objectid'],
+                "ObjectType":resolved_childentry['type']
+            }
+            domain["ChildObjects"].append(out_object)
+
+        for gplink_dn, options in ADUtils.parse_gplink_string(ADUtils.get_entry_property(self.domain_object, 'gPLink', '')):
+            link = dict()
+            link['IsEnforced'] = options == 2
+            try:
+                link['GUID'] = self.get_membership(gplink_dn.upper())['ObjectIdentifier']
+                domain['Links'].append(link)
+            except TypeError:
+                logging.warning('Could not resolve GPO link to {0}'.format(gplink_dn))
 
         aces = self.parse_acl(domain, 'domain', ADUtils.get_entry_property(self.domain_object, 'nTSecurityDescriptor', raw=True))
         domain['Aces'] = self.resolve_aces(aces)
