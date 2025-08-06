@@ -338,9 +338,13 @@ class ADExplorerSnapshot(object):
             "IsACLProtected": False
         }
 
-        for childentry in self.child_object_tree[domain["Properties"]["distinguishedname"]]:
-            childentry = self.snap.getObject(self.dncache[childentry])
+        for dn in self.child_object_tree[domain["Properties"]["distinguishedname"]]:
+            childentry = self.snap.getObject(self.dncache[dn])
             resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+            if resolved_childentry['objectid'] == "":
+                # skip child object if no id (sid/guid) could be retrieved
+                self.log.warn("Child object has no object id: %s", dn)
+                continue
             out_object = {
                 "ObjectIdentifier":resolved_childentry['objectid'],
                 "ObjectType":resolved_childentry['type']
@@ -906,9 +910,13 @@ class ADExplorerSnapshot(object):
         ou["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description')
         ou["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', default=0)
 
-        for childentry in self.child_object_tree[ou["Properties"]["distinguishedname"]]:
-            childentry = self.snap.getObject(self.dncache[childentry])
+        for dn in self.child_object_tree[ou["Properties"]["distinguishedname"]]:
+            childentry = self.snap.getObject(self.dncache[dn])
             resolved_childentry = ADUtils.resolve_ad_entry(childentry)
+            if resolved_childentry['objectid'] == "":
+                # skip child object if no id (sid/guid) could be retrieved
+                self.log.warn("Child object has no object id: %s", dn)
+                continue
             out_object = {
                 "ObjectIdentifier":resolved_childentry['objectid'],
                 "ObjectType":resolved_childentry['type']
@@ -967,16 +975,20 @@ class ADExplorerSnapshot(object):
         container["Properties"]["description"] = ADUtils.get_entry_property(entry, 'description', '')
         container["Properties"]["whencreated"] = ADUtils.get_entry_property(entry, 'whencreated', default=0)
 
-        for childentry in self.child_object_tree[container["Properties"]["distinguishedname"]]:
-            childentry = self.snap.getObject(self.dncache[childentry])
+        for dn in self.child_object_tree[container["Properties"]["distinguishedname"]]:
+            childentry = self.snap.getObject(self.dncache[dn])
             if ADUtils.is_filtered_container_child(ADUtils.get_entry_property(childentry, 'distinguishedName')):
                 continue
             resolved_childentry = ADUtils.resolve_ad_entry(childentry)
-            object = {
+            if resolved_childentry['objectid'] == "":
+                # skip child object if no id (sid/guid) could be retrieved
+                self.log.warn("Child object has no object id: %s", dn)
+                continue
+            out_object = {
                 "ObjectIdentifier":resolved_childentry['objectid'],
                 "ObjectType":resolved_childentry['type']
             }
-            container["ChildObjects"].append(object)
+            container["ChildObjects"].append(out_object)
 
         aces = self.parse_acl(container, 'container', ADUtils.get_entry_property(entry, 'nTSecurityDescriptor', raw=True))
         container['Aces'] += self.resolve_aces(aces)
