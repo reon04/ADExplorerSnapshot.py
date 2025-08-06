@@ -186,6 +186,8 @@ class ADExplorerSnapshot(object):
 
     # build caches: guidmap, domains, forest_domains, computers
     def preprocess(self):
+        from adexpsnapshot.parser.classes import DN
+
         for k,cl in self.snap.classes.items():
             self.objecttype_guid_map[k] = str(cl.schemaIDGUID)
 
@@ -242,17 +244,16 @@ class ADExplorerSnapshot(object):
                 self.domaincontrollers.append(idx)
 
             # create child object tree
-            from adexpsnapshot.parser.classes import DN
             #distinguishedName = ADUtils.get_entry_property(obj, 'distinguishedName') # can be left out, variable is populated above
             distinguishedNameComponents = DN.parse_dn(str(distinguishedName))
             parentDistinguishedName = DN.dn_to_string(distinguishedNameComponents[1:])
             self.child_object_tree[parentDistinguishedName].add(str(distinguishedName).upper())
 
             if self.log and self.log.term_mode:
-                prog.status(f"{idx+1}/{self.snap.header.numObjects} ({len(self.sidcache)} sids, {len(self.computersidcache)} computers, {len(self.domains)} domains with {len(self.domaincontrollers)} DCs)")
+                prog.status(f"{idx+1}/{self.snap.header.numObjects} ({len(self.sidcache)} sids, {len(self.computersidcache)} computers, {len(self.domains)} domains with {len(self.domaincontrollers)} DCs, {len(self.child_object_tree)} parent objects)")
 
         if self.log:
-            prog.success(f"{len(self.sidcache)} sids, {len(self.computersidcache)} computers, {len(self.domains)} domains with {len(self.domaincontrollers)} DCs")
+            prog.success(f"{len(self.sidcache)} sids, {len(self.computersidcache)} computers, {len(self.domains)} domains with {len(self.domaincontrollers)} DCs, {len(self.child_object_tree)} parent objects")
 
     def process(self):
         self.domainname = ADUtils.ldap2domain(self.rootdomain)
