@@ -30,9 +30,10 @@ from typing import List
 class ADExplorerSnapshot(object):
     OutputMode = Enum('OutputMode', ['BloodHound', 'Objects'])
 
-    def __init__(self, snapfile, outputfolder, log=None, snapshot_parser=None):
+    def __init__(self, snapfile, outputfolder, ignore_cachefile=False, log=None, snapshot_parser=None):
         self.log = log
         self.output = outputfolder
+        self.ignore_cachefile = ignore_cachefile
 
         if not snapshot_parser:
             from adexpsnapshot.parser.classes import Snapshot
@@ -155,7 +156,7 @@ class ADExplorerSnapshot(object):
         except (OSError, IOError, EOFError) as e:
             pass
 
-        if dico and dico.get('shelved', False):
+        if dico and dico.get('shelved', False) and not self.ignore_cachefile:
             if self.log:
                 self.log.success("Restored pre-processed information from data cache")
 
@@ -1321,6 +1322,7 @@ def main():
     parser.add_argument('snapshot', type=argparse.FileType('rb'), help="Path to the snapshot .dat file.")
     parser.add_argument('-o', '--output', required=False, type=pathlib.Path, help="Path to the *.json output folder. Folder will be created if it doesn't exist. Defaults to the current directory.", default=".")
     parser.add_argument('-m', '--mode', required=False, help="The output mode to use. Besides BloodHound JSON output files, it is possible to dump all objects with all attributes to NDJSON. Defaults to BloodHound output mode.", choices=ADExplorerSnapshot.OutputMode.__members__, default='BloodHound')
+    parser.add_argument('-i', '--ignore_cache', required=False, help="Ignore existing cache file for preprocessing. Always runs preprocessing step.", action='store_true')
 
     args = parser.parse_args()
 
@@ -1345,7 +1347,7 @@ def main():
         parser.print_help()
         return
     
-    ades = ADExplorerSnapshot(args.snapshot, args.output, log)
+    ades = ADExplorerSnapshot(args.snapshot, args.output, args.ignore_cache, log)
 
     outputmode = ADExplorerSnapshot.OutputMode[args.mode]
     if outputmode == ADExplorerSnapshot.OutputMode.BloodHound:
