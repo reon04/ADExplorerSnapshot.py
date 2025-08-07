@@ -4,7 +4,7 @@ import site, sys
 site.ENABLE_USER_SITE = "--user" in sys.argv[1:]
 
 setup(name='ADExplorerSnapshot',
-      version='1.1.0',
+      version='1.2.0',
       description='ADExplorerSnapshot.py is an AD Explorer snapshot parser. It is made as an ingestor for BloodHound, and also supports full-object dumping to NDJSON.',
       author='David Micus',
       author_email='david.micus@secida.com',
