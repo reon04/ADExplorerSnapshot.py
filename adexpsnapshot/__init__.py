@@ -250,7 +250,7 @@ class ADExplorerSnapshot(object):
             #distinguishedName = ADUtils.get_entry_property(obj, 'distinguishedName') # can be left out, variable is populated above
             distinguishedNameComponents = DN.parse_dn(str(distinguishedName))
             parentDistinguishedName = DN.dn_to_string(distinguishedNameComponents[1:])
-            self.child_object_tree[parentDistinguishedName].add(str(distinguishedName).upper())
+            self.child_object_tree[parentDistinguishedName].add(str(distinguishedName))
 
             if self.log and self.log.term_mode:
                 prog.status(f"{idx+1}/{self.snap.header.numObjects} ({len(self.sidcache)} sids, {len(self.computersidcache)} computers, {len(self.domains)} domains with {len(self.domaincontrollers)} DCs, {idx+1} objects with {len(self.child_object_tree)} parent objects)")
